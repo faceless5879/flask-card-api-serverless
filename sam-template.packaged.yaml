@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Express Application/API powered by API Gateway and Lambda
+Resources:
+  ExpressApi:
+    Type: AWS::Serverless::HttpApi
+  ExpressLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://vendia-serverless/a8a0749dd5ccfff2ce7173fc4e78185c
+      Handler: main.handler
+      MemorySize: 1024
+      Runtime: nodejs16.x
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Fn::Select:
+            - 1
+            - Fn::Split:
+              - /
+              - Fn::GetAtt:
+                - FlaskCardDB
+                - Arn
+      Events:
+        ProxyApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId:
+              Ref: ExpressApi
+  FlaskCardDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+      - AttributeName: cardId
+        KeyType: HASH
+      - AttributeName: cardName
+        KeyType: RANGE
+      AttributeDefinitions:
+      - AttributeName: cardId
+        AttributeType: S
+      - AttributeName: cardName
+        AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      TableName: m_card
+  ApiGatewayPushToCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Push logs to CloudWatch logs from API Gateway
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+  ApiAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn:
+        Fn::GetAtt:
+        - ApiGatewayPushToCloudWatchRole
+        - Arn
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/api-gateway/${AWS::StackName}
+Outputs:
+  LambdaFunctionConsoleUrl:
+    Description: Console URL for the Lambda Function.
+    Value:
+      Fn::Sub: https://${AWS::Region}.console.aws.amazon.com/lambda/home?region=${AWS::Region}#/functions/${ExpressLambdaFunction}
+  ApiGatewayApiConsoleUrl:
+    Description: Console URL for the API Gateway API's Stage.
+    Value:
+      Fn::Sub: https://${AWS::Region}.console.aws.amazon.com/apigateway/home?region=${AWS::Region}#/apis/${ExpressApi}/stages/prod
+  ApiUrl:
+    Description: Invoke URL for your API. Clicking this link will perform a GET request
+      on the root resource of your API.
+    Value:
+      Fn::Sub: https://${ExpressApi}.execute-api.${AWS::Region}.amazonaws.com/
+  LambdaFunctionName:
+    Description: Name of the Serverless Express Lambda Function
+    Value:
+      Ref: ExpressLambdaFunction
